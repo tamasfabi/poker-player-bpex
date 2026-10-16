@@ -9,3 +9,6 @@ out/
 web
 .sw[a-z]
 tools/.cache/
+
+CLAUDE.local.md
+notes/
