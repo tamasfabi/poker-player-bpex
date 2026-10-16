@@ -3,7 +3,7 @@ import express from 'express';
 type Engine = { betRequest(gameState: unknown, cb: (bet: number) => void): void; showdown(gameState: unknown): void };
 const { Player } = require('../dist/engine.js') as { Player: new () => Engine };
 
-const VERSION = "bpex maniac 4.3 - shove-first aggro";
+const VERSION = "bpex maniac 4.4 - shove-first aggro";
 
 const app = express();
 const player = new Player();
