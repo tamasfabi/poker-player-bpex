@@ -1,7 +1,7 @@
 import express from 'express';
 import { Player } from './Player';
 
-const VERSION = "bpex v1.5 - opponent profiles + bubble";
+const VERSION = "bpex v1.6 - rollback to v1.3 logic";
 
 const app = express();
 const player = new Player();

@@ -1,40 +1,44 @@
-import { profileOf } from "./priors";
-import { GameState, PlayerState } from "./types";
+import { GameState } from "./types";
 
-// Memory of how often each opponent raises preflop. The server process lives across requests and
-// games, so stats are kept per opponent name + version. We only see the table on our own turn, so
-// this undercounts somewhat.
-type Stats = { seen: number; raised: number; lastHand: string; raisedThisHand: boolean };
+// Per-game memory of how often each opponent raises preflop. The server process lives across
+// requests, so this builds up over a sit'n'go. We only see the table on our own turn, so it undercounts.
+type Stats = { seen: number; raised: number; lastRound: number; raisedThisRound: boolean };
 
-const stats = new Map<string, Stats>();
+const games = new Map<string, Map<string, Stats>>();
 
-const keyOf = (p: PlayerState) => `${p.name}|${p.version}`;
+function table(gameId: string): Map<string, Stats> {
+  let t = games.get(gameId);
+  if (!t) {
+    if (games.size > 20) games.clear();
+    t = new Map();
+    games.set(gameId, t);
+  }
+  return t;
+}
 
 export function observe(gs: GameState): void {
   if ((gs.community_cards ?? []).length > 0) return;
   const bb = gs.small_blind * 2;
-  const hand = `${gs.game_id}:${gs.round}`;
-  if (stats.size > 200) stats.clear();
+  const t = table(gs.game_id);
   gs.players.forEach((p, i) => {
     if (i === gs.in_action || p.status === "out") return;
-    const s = stats.get(keyOf(p)) ?? { seen: 0, raised: 0, lastHand: "", raisedThisHand: false };
-    if (s.lastHand !== hand) {
-      s.lastHand = hand;
+    const s = t.get(p.name) ?? { seen: 0, raised: 0, lastRound: -1, raisedThisRound: false };
+    if (s.lastRound !== gs.round) {
+      s.lastRound = gs.round;
       s.seen++;
-      s.raisedThisHand = false;
+      s.raisedThisRound = false;
     }
-    if (p.bet > bb && !s.raisedThisHand) {
+    if (p.bet > bb && !s.raisedThisRound) {
       s.raised++;
-      s.raisedThisHand = true;
+      s.raisedThisRound = true;
     }
-    stats.set(keyOf(p), s);
+    t.set(p.name, s);
   });
 }
 
-// Share of hands this opponent raises preflop: what we have seen, blended with the known profile
-// (worth 20 hands) so we exploit from the first hand and adapt when they change versions.
-export function raiseFrequency(p: PlayerState): number {
-  const s = stats.get(keyOf(p)) ?? { seen: 0, raised: 0 };
-  const prior = profileOf(p.name).preflopRaise;
-  return (s.raised + prior * 20) / (s.seen + 20);
+// Share of hands this opponent raises preflop, with a prior of 1 raise in 4 hands.
+export function raiseFrequency(gs: GameState, name: string): number {
+  const s = table(gs.game_id).get(name);
+  if (!s) return 0.25;
+  return (s.raised + 1) / (s.seen + 4);
 }
