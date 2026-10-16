@@ -1,6 +1,7 @@
 import { chenScore } from "./hand";
 import { equity } from "./equity";
-import { GameState } from "./types";
+import { observe, raiseFrequency } from "./opponents";
+import { GameState, PlayerState } from "./types";
 
 export class Player {
   public betRequest(gameState: GameState, betCallback: (bet: number) => void): void {
@@ -16,64 +17,82 @@ export class Player {
   public showdown(gameState: GameState): void {}
 }
 
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
 function decide(gs: GameState): number {
   const me = gs.players[gs.in_action];
   const hole = me.hole_cards ?? [];
   const board = gs.community_cards ?? [];
   if (hole.length < 2) return 0;
+  observe(gs);
 
   const bb = gs.small_blind * 2;
   const toCall = Math.max(0, gs.current_buy_in - me.bet);
   const stack = me.stack;
+  const opponents = gs.players.filter((p, i) => i !== gs.in_action && p.status === "active");
+  // The opponent who made the current biggest bet
+  const aggressor: PlayerState | undefined = opponents.reduce<PlayerState | undefined>((a, p) => (!a || p.bet > a.bet ? p : a), undefined);
+  // Chips we can actually win or lose: the biggest stack still in against us
+  const effective = Math.min(stack + me.bet, Math.max(0, ...opponents.map(p => p.stack + p.bet)));
+  const effectiveBlinds = effective / bb;
+  const potOdds = toCall / (gs.pot + toCall);
 
   const check = () => 0;
   const call = () => Math.min(toCall, stack);
   const raise = (extra: number) => Math.min(stack, toCall + Math.max(gs.minimum_raise, Math.floor(extra)));
   const allIn = () => stack;
-  const callIfCheap = (limit: number) => (toCall <= limit ? call() : check());
 
   if (board.length === 0) {
     // Fewer players left -> blinds come around faster and average hands are stronger, so play wider
     const playersLeft = gs.players.filter(p => p.status !== "out").length;
     const chen = chenScore(hole) + (playersLeft <= 2 ? 3 : playersLeft === 3 ? 1 : 0);
-    const stackInBlinds = stack / bb;
-    const facingShove = toCall >= stack * 0.4;
+    const raised = gs.current_buy_in > bb;
 
-    if (stackInBlinds <= 15) {
-      // Push/fold: the shorter we are, the wider we shove
-      const shoveAt = stackInBlinds <= 6 ? 6 : stackInBlinds <= 10 ? 7 : 8;
-      if (chen >= shoveAt) return allIn();
-      return callIfCheap(0);
+    if (!raised) {
+      if (effectiveBlinds <= 15) {
+        // Push/fold: the shorter the effective stack, the wider we shove
+        const shoveAt = effectiveBlinds <= 3 ? -99 : effectiveBlinds <= 6 ? 5 : effectiveBlinds <= 10 ? 6 : 7;
+        return chen >= shoveAt ? allIn() : check();
+      }
+      if (chen >= 12) return raise(gs.pot + 3 * bb);
+      if (chen >= 10) return raise(3 * bb);
+      if (chen >= 8) return raise(2 * bb);
+      if (chen >= 6 && toCall < bb) return call();
+      return check();
     }
-    if (facingShove) return chen >= 11 ? allIn() : check();
-    if (chen >= 12) return toCall > 6 * bb ? allIn() : raise(gs.pot + 3 * bb);
-    if (chen >= 10) return toCall <= 6 * bb ? raise(3 * bb) : callIfCheap(stack * 0.35);
-    if (chen >= 8) return toCall <= bb ? raise(2 * bb) : callIfCheap(Math.max(3 * bb, stack * 0.06));
-    if (chen >= 6) return callIfCheap(bb);
+
+    // Facing a raise: equity against the raiser's likely range vs the price
+    const freq = aggressor ? raiseFrequency(gs, aggressor.name) : 0.25;
+    const bigRaise = !aggressor || aggressor.stack === 0 || gs.current_buy_in >= 10 * bb;
+    const range = clamp(freq * (bigRaise ? 0.7 : 1), 0.08, 1);
+    const callers = opponents.filter(p => p !== aggressor && p.bet === gs.current_buy_in).length;
+    const eq = equity(hole, board, 1 + callers, { aggressorRange: range });
+
+    if (eq >= 0.62 && stack > 40 * bb) return raise(gs.pot);
+    if (eq >= potOdds + 0.04) return effectiveBlinds <= 25 ? allIn() : call();
     return check();
   }
 
-  // Postflop: Monte Carlo equity against the opponents still in the hand, compared with pot odds
-  const opponents = gs.players.filter((p, i) => i !== gs.in_action && p.status === "active").length;
-  const eq = equity(hole, board, opponents);
-  const potOdds = toCall / (gs.pot + toCall);
-  // Someone who bets holds a stronger than random hand: demand more equity the bigger the bet
-  const betPressure = toCall === 0 ? 0 : Math.min(0.25, 0.08 + (toCall / Math.max(gs.pot, 1)) * 0.15);
-  const adjusted = eq - betPressure;
+  // Postflop
   const isRiver = board.length === 5;
-
-  if (adjusted >= 0.8) return toCall >= stack * 0.4 ? allIn() : raise(gs.pot);
-  if (adjusted >= 0.65) {
-    if (toCall === 0) return raise(gs.pot * 0.6);
-    return toCall <= gs.pot * 0.5 ? raise(gs.pot * 0.75) : call();
-  }
   if (toCall === 0) {
-    if (adjusted >= 0.5 && opponents <= 2) return raise(gs.pot * 0.5);
+    const eq = equity(hole, board, opponents.length);
+    if (eq >= 0.75) return raise(gs.pot * 0.75);
+    if (eq >= 0.55 && opponents.length <= 2) return raise(gs.pot * 0.5);
     // Mixed semi-bluff heads-up so we are harder to profile
-    if (opponents === 1 && !isRiver && eq >= 0.3 && Math.random() < 0.3) return raise(gs.pot * 0.5);
+    if (opponents.length === 1 && !isRiver && eq >= 0.3 && Math.random() < 0.3) return raise(gs.pot * 0.5);
     return check();
   }
-  if (adjusted >= potOdds + 0.03) return call();
+
+  // Facing a bet: the bigger the bet relative to the pot, the stronger the bettor's range
+  const betRatio = toCall / Math.max(gs.pot - toCall, 1);
+  const baseRange = betRatio <= 0.4 ? 0.55 : betRatio <= 0.8 ? 0.35 : betRatio <= 1.3 ? 0.22 : 0.12;
+  const freq = aggressor ? raiseFrequency(gs, aggressor.name) : 0.25;
+  const range = clamp(baseRange * (0.6 + freq), 0.08, 1);
+  const eq = equity(hole, board, opponents.length, { aggressorRange: range });
+
+  if (eq >= 0.7) return toCall >= stack * 0.4 ? allIn() : raise(gs.pot);
+  if (eq >= potOdds + 0.03) return call();
   return check();
 }
 

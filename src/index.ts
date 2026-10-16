@@ -1,7 +1,7 @@
 import express from 'express';
 import { Player } from './Player';
 
-const VERSION = "bpex v1.2 - equity postflop";
+const VERSION = "bpex v1.3 - range-aware equity";
 
 const app = express();
 const player = new Player();
