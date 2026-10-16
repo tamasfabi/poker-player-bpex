@@ -44,10 +44,15 @@ while True:
 
     for team in t["teams"]:
         v = team.get("last_version", "")
-        if team["name"] in versions and versions[team["name"]] != v:
+        # last_version flickers between concurrently running games; the active deployment's commit does not
+        deps = team.get("lastDeployments") or [{}]
+        active = next((d for d in deps if d.get("status") == "active"), deps[0])
+        commit = (active.get("commit_id") or "")[:7]
+        if team["name"] in versions and versions[team["name"]] != commit:
             extra = repo_changes(team["name"]) if team["name"] != TEAM else ""
-            say(f"DEPLOY {team['name']}: {versions[team['name']]!r} -> {v!r}{extra}")
-        versions[team["name"]] = v
+            msg = (active.get("message") or "").split("\n")[0][:80]
+            say(f"DEPLOY {team['name']}: {versions[team['name']]} -> {commit} {msg!r} ({v!r}){extra}")
+        versions[team["name"]] = commit
         if team["name"] == TEAM:
             bad = "error" in v.lower() or "unreachable" in v.lower()
             if bad and not alerted_error:

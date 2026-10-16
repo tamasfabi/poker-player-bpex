@@ -21,10 +21,6 @@ export class Player {
   public showdown(gameState: GameState): void {}
 }
 
-// Open-raise to 3bb: big enough that nontekik's BB stops defending (it only resteals its top 30% once its call > 1.5bb)
-const OPEN_TO = 3;
-// How often we stab 3/4 pot heads-up after the opponent checks to us (all three bots check only weak hands)
-const STAB = 0.6;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 // Streets on which we already raised, so we never get dragged into endless min-raise wars
@@ -74,14 +70,15 @@ function decide(gs: GameState): number {
     const raised = gs.current_buy_in > bb;
 
     if (!raised) {
-      if (effectiveBlinds <= 10) {
+      if (effectiveBlinds <= 15) {
         // Push/fold: the shorter the effective stack, the wider we shove
-        const shoveAt = effectiveBlinds <= 3 ? -99 : effectiveBlinds <= 6 ? 4 : 5;
+        const shoveAt = effectiveBlinds <= 3 ? -99 : effectiveBlinds <= 6 ? 5 : effectiveBlinds <= 10 ? 6 : 7;
         return chen >= shoveAt ? allIn() : check();
       }
+      // Open to 4.5bb: the other bots fold most hands once calling costs more than ~3bb
       if (chen >= 12) return raise(gs.pot + 3 * bb);
-      // Wide steal: the bots fold most hands to a raise and play weakly postflop
-      if (chen >= 3) return raise(OPEN_TO * bb - gs.current_buy_in);
+      if (chen >= 8) return raise(4.5 * bb - gs.current_buy_in);
+      if (chen >= 6 && toCall < bb) return call();
       return check();
     }
 
@@ -90,6 +87,12 @@ function decide(gs: GameState): number {
     const bigRaise = !aggressor || aggressor.stack === 0 || gs.current_buy_in >= 10 * bb;
     let range = clamp(freq * (bigRaise ? 0.7 : 1), 0.08, 1);
     if (aggressor && aggressor.stack === 0) range = Math.max(range, shoveRange(aggressor));
+    // Ranges read from the other bots' behaviour
+    if (aggressor?.name === "nontekik") {
+      if (aggressor.stack === 0) range = 0.3;
+      else if (me.bet > bb && effectiveBlinds > 25) range = 0.03;
+    }
+    if (aggressor?.name === "megistekik" && aggressor.stack === 0) range = me.bet > bb ? 0.06 : 0.2;
     // Better than any guess: the hands this opponent actually shoved at this depth, read from finished hands
     const measured = aggressor && aggressor.stack === 0 ? measuredShoveRange(aggressor.name, aggressor.bet / bb) : undefined;
     if (measured !== undefined) range = measured;
@@ -107,15 +110,10 @@ function decide(gs: GameState): number {
   if (toCall === 0) {
     const eq = equity(hole, board, opponents.length);
     equityCache = eq;
+    // nontechyk only continues against a pot-sized bet with a strong made hand
+    if (opponents.length === 1 && opponents[0].name === "nontechyk") return raise(eq >= 0.75 ? gs.pot * 0.75 : gs.pot);
     if (eq >= 0.75) return raise(gs.pot * 0.75);
     if (eq >= 0.55 && opponents.length <= 2) return raise(gs.pot * 0.5);
-    // Heads-up and the opponent checked to us: its checking range is weak, a 3/4-pot stab folds most of it
-    if (opponents.length === 1) {
-      const n = gs.players.length;
-      const dist = (i: number) => (i - gs.dealer - 1 + 2 * n) % n;
-      const oppIdx = gs.players.indexOf(opponents[0]);
-      if (dist(oppIdx) < dist(gs.in_action) && Math.random() < STAB) return raise(gs.pot * 0.75);
-    }
     // Mixed semi-bluff heads-up so we are harder to profile
     if (opponents.length === 1 && !isRiver && eq >= 0.3 && Math.random() < 0.3) return raise(gs.pot * 0.5);
     return check();
@@ -126,6 +124,8 @@ function decide(gs: GameState): number {
   const baseRange = betRatio <= 0.4 ? 0.55 : betRatio <= 0.8 ? 0.35 : betRatio <= 1.3 ? 0.22 : 0.12;
   const freq = aggressor ? raiseFrequency(gs, aggressor.name) : 0.25;
   let range = clamp(baseRange * (0.6 + freq), 0.08, 1);
+  // nontechyk never bluffs: its bets are value, sized by strength
+  if (aggressor?.name === "nontechyk") range = betRatio <= 0.55 ? 0.35 : betRatio <= 0.75 ? 0.25 : 0.12;
   // nontekik bluffs ~0.75-pot bets heads-up with air, so its bets there are wider than their size says
   if (aggressor?.name === "nontekik" && opponents.length === 1 && betRatio <= 1) range = Math.min(1, range * 1.6);
   const eq = equity(hole, board, opponents.length, { aggressorRange: range });
