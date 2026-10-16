@@ -6,7 +6,9 @@ API docs: https://www.leanpoker.org/docs/api/player
 ## Deploy
 
 Every push to `main` on GitHub (`tamasfabi/poker-player-bpex`) is deployed automatically by Lean Poker to Heroku
-(~20 s). Bump `VERSION` in `src/index.ts` on every strategy change so the dashboard shows which version is playing.
+(~20 s, sometimes minutes when Lean Poker's deploy service is busy). The public `VERSION` in `src/index.ts` is
+deliberately misleading ("maniac"); bump its number on every strategy change and record the real strategy version
+(v1.x) in the commit message.
 
 Check what is live:
 

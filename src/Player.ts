@@ -1,6 +1,6 @@
 import { chenScore } from "./hand";
 import { equity } from "./equity";
-import { observe, raiseFrequency } from "./opponents";
+import { observe, raiseFrequency, shoveRange } from "./opponents";
 import { GameState, PlayerState } from "./types";
 
 export class Player {
@@ -76,7 +76,8 @@ function decide(gs: GameState): number {
     // Facing a raise: equity against the raiser's likely range vs the price
     const freq = aggressor ? raiseFrequency(gs, aggressor.name) : 0.25;
     const bigRaise = !aggressor || aggressor.stack === 0 || gs.current_buy_in >= 10 * bb;
-    const range = clamp(freq * (bigRaise ? 0.7 : 1), 0.08, 1);
+    let range = clamp(freq * (bigRaise ? 0.7 : 1), 0.08, 1);
+    if (aggressor && aggressor.stack === 0) range = Math.max(range, shoveRange(aggressor));
     const callers = opponents.filter(p => p !== aggressor && p.bet === gs.current_buy_in).length;
     const eq = equity(hole, board, 1 + callers, { aggressorRange: range });
     equityCache = eq;

@@ -33,7 +33,34 @@ export function observe(gs: GameState): void {
       s.raisedThisRound = true;
     }
     t.set(p.name, s);
+
+    // Preflop all-ins, remembered across games per bot version
+    const key = `${p.name}|${p.version}`;
+    const hand = `${gs.game_id}:${gs.round}`;
+    const sh = shoves.get(key) ?? { seen: 0, shoved: 0, lastHand: "", counted: false };
+    if (sh.lastHand !== hand) {
+      sh.lastHand = hand;
+      sh.seen++;
+      sh.counted = false;
+    }
+    if (p.stack === 0 && p.bet > bb && !sh.counted) {
+      sh.shoved++;
+      sh.counted = true;
+    }
+    if (shoves.size > 200) shoves.clear();
+    shoves.set(key, sh);
   });
+}
+
+type ShoveStats = { seen: number; shoved: number; lastHand: string; counted: boolean };
+const shoves = new Map<string, ShoveStats>();
+
+// How wide an opponent's preflop all-in range is: bots that shove often shove junk too.
+// A shove in ~3% of hands maps to roughly the top 23%; ~13% (a re-steal bot) to roughly the top half.
+export function shoveRange(p: { name: string; version: string }): number {
+  const s = shoves.get(`${p.name}|${p.version}`);
+  const freq = s ? (s.shoved + 0.5) / (s.seen + 20) : 0.025;
+  return Math.min(0.7, Math.max(0.15, 0.15 + 2.5 * freq));
 }
 
 // Share of hands this opponent raises preflop, with a prior of 1 raise in 4 hands.
