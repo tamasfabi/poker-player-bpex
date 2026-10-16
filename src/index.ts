@@ -1,7 +1,7 @@
 import express from 'express';
 import { Player } from './Player';
 
-const VERSION = "bpex v1.3 - range-aware equity";
+const VERSION = "bpex v1.4 - exploit raisers";
 
 const app = express();
 const player = new Player();
