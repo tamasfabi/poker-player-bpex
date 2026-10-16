@@ -24,9 +24,9 @@ A crash or timeout means we fold every hand, so always run `npm run build` and t
 - `src/hand.ts`: 5–7 card hand evaluator (`evaluate`), draws, Chen preflop score.
 - `src/types.ts`: game state types.
 - `tools/standings.py`: tournament points and our recent games.
-- `tools/analyze.py`: opponent profiling from game logs (see `docs/opponents.md`).
+- `tools/analyze.py`: opponent profiling from game logs .
 - `sim/`: local tournament simulator for A/B testing strategies (see `sim/README.md`).
-- `docs/GUIDE.md`: strategy notes and the workflow for improving the bot.
+- `README.md`: overview of the maniac strategy.
 
 ## Testing a change before deploying (deploys are risky: a 503 mid-game disqualifies us)
 

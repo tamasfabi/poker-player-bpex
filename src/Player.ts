@@ -1,3 +1,6 @@
+// bpex maniac: shove-first aggression. See README.md for the rules this file implements:
+// push/fold any two from 20bb down, 6.5bb opens deeper, call all-ins with QQ+/AK only,
+// big postflop bets only with two pair or better.
 import { chenScore } from "./hand";
 import { equity } from "./equity";
 import { observe, raiseFrequency, shoveRange } from "./opponents";
