@@ -1,0 +1,21 @@
+{
+    "compilerOptions": {
+        "module": "nodenext",
+        "target": "ES2021",
+        "sourceMap": true,
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+        "outDir": "out",
+        "declaration": true,
+        "allowJs": true,
+        "checkJs": true,
+        "strict": true
+    },
+    "exclude": [
+        "out/*",
+        "node_modules",
+        "jest.config.js",
+        "src/*.test.ts",
+        "src/*.spec.ts",
+    ]
+}
