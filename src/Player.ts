@@ -94,7 +94,9 @@ function decide(gs: GameState): number {
     }
     if (aggressor?.name === "megistekik" && aggressor.stack === 0) range = me.bet > bb ? 0.06 : 0.2;
     // Better than any guess: the hands this opponent actually shoved at this depth, read from finished hands
-    const measured = aggressor && aggressor.stack === 0 ? measuredShoveRange(aggressor.name, aggressor.bet / bb) : undefined;
+    // Only for shoves into our blinds: re-shoves over our own raise come from a different, tighter
+    // range (nontekik's is a fixed top 30%), while the measured samples are mostly open-shoves
+    const measured = aggressor && aggressor.stack === 0 && me.bet <= bb ? measuredShoveRange(aggressor.name, aggressor.bet / bb) : undefined;
     if (measured !== undefined) range = measured;
     const callers = opponents.filter(p => p !== aggressor && p.bet === gs.current_buy_in).length;
     const eq = equity(hole, board, 1 + callers, { aggressorRange: range });

@@ -1,7 +1,7 @@
 import express from 'express';
 import { Player } from './Player';
 
-const VERSION = "bpex maniac 4.1 - shove-first aggro";
+const VERSION = "bpex maniac 4.2 - shove-first aggro";
 
 const app = express();
 const player = new Player();
