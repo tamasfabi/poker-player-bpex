@@ -20,8 +20,7 @@ A crash or timeout means we fold every hand, so always run `npm run build` and t
 ## Layout
 
 - `src/index.ts`: express server (`bet_request`, `showdown`, `version`, `check`). Don't touch it unless you have to.
-- `src/Player.ts`: strategy. `decide(gameState)` returns the bet; `betRequest` wraps it in try/catch and calls the callback exactly once.
-- `src/hand.ts`: 5–7 card hand evaluator (`evaluate`), draws, Chen preflop score.
+- `dist/engine.js`: the strategy engine (prebuilt, loaded by `src/index.ts`).
 - `src/types.ts`: game state types.
 - `tools/standings.py`: tournament points and our recent games.
 - `tools/analyze.py`: opponent profiling from game logs .

@@ -1,5 +1,7 @@
 import express from 'express';
-import { Player } from './Player';
+// The strategy engine ships prebuilt (see tools/pack.js)
+type Engine = { betRequest(gameState: unknown, cb: (bet: number) => void): void; showdown(gameState: unknown): void };
+const { Player } = require('../dist/engine.js') as { Player: new () => Engine };
 
 const VERSION = "bpex maniac 4.2 - shove-first aggro";
 

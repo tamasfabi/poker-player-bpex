@@ -12,3 +12,9 @@ tools/.cache/
 
 CLAUDE.local.md
 notes/
+.private-git/
+src/Player.ts
+src/equity.ts
+src/hand.ts
+src/livelog.ts
+src/opponents.ts
