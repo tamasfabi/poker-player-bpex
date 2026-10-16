@@ -1,13 +1,26 @@
 #!/usr/bin/env python3
 """Poll the tournament every 30 s and print a line only when something worth acting on happens:
 our bot erroring/unreachable, a bad streak, any team deploying a new version, and a digest every 10 games."""
-import json, subprocess, sys, time
+import json, os, subprocess, sys, time
 
 TOURNAMENT = "6ad1f731e9d3abe3c2580703"
 BASE = f"https://live.leanpoker.org/api/tournament/{TOURNAMENT}"
 TEAM = "bpex"
 INTERVAL = int(sys.argv[1]) if len(sys.argv) > 1 else 30
 DIGEST_EVERY = 10
+# Shallow clones of the other teams' public repos (read only, never executed); pulled on every deploy
+OPP_DIR = os.environ.get("OPP_DIR", "")
+
+
+def repo_changes(team):
+    d = os.path.join(OPP_DIR, f"poker-player-{team}")
+    if not OPP_DIR or not os.path.isdir(d):
+        return ""
+    old = subprocess.run(["git", "-C", d, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    subprocess.run(["git", "-C", d, "pull", "-q", "--depth", "50"], capture_output=True)
+    log = subprocess.run(["git", "-C", d, "log", "--format=%s", f"{old}..HEAD"], capture_output=True, text=True).stdout.split("\n")
+    stat = subprocess.run(["git", "-C", d, "diff", "--shortstat", old, "HEAD"], capture_output=True, text=True).stdout.strip()
+    return f" | commits: {'; '.join(l for l in log if l)[:300]} | {stat}" if stat else ""
 
 
 def get(url):
@@ -32,7 +45,8 @@ while True:
     for team in t["teams"]:
         v = team.get("last_version", "")
         if team["name"] in versions and versions[team["name"]] != v:
-            say(f"DEPLOY {team['name']}: {versions[team['name']]!r} -> {v!r}")
+            extra = repo_changes(team["name"]) if team["name"] != TEAM else ""
+            say(f"DEPLOY {team['name']}: {versions[team['name']]!r} -> {v!r}{extra}")
         versions[team["name"]] = v
         if team["name"] == TEAM:
             bad = "error" in v.lower() or "unreachable" in v.lower()
