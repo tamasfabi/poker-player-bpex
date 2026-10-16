@@ -1,4 +1,5 @@
-import { Category, chenScore, evaluate, hasFlushDraw, hasStraightDraw, rankValue } from "./hand";
+import { chenScore } from "./hand";
+import { equity } from "./equity";
 import { GameState } from "./types";
 
 export class Player {
@@ -52,28 +53,27 @@ function decide(gs: GameState): number {
     return check();
   }
 
-  const hand = evaluate([...hole, ...board]);
-  const boardHand = evaluate(board);
-  const usesHole = hand.category > boardHand.category || (hand.category === boardHand.category && hand.score > boardHand.score && hand.category >= Category.Straight);
+  // Postflop: Monte Carlo equity against the opponents still in the hand, compared with pot odds
+  const opponents = gs.players.filter((p, i) => i !== gs.in_action && p.status === "active").length;
+  const eq = equity(hole, board, opponents);
+  const potOdds = toCall / (gs.pot + toCall);
+  // Someone who bets holds a stronger than random hand: demand more equity the bigger the bet
+  const betPressure = toCall === 0 ? 0 : Math.min(0.25, 0.08 + (toCall / Math.max(gs.pot, 1)) * 0.15);
+  const adjusted = eq - betPressure;
   const isRiver = board.length === 5;
 
-  if (usesHole && hand.category >= Category.Straight) {
-    return toCall > 0 && toCall >= stack * 0.5 ? allIn() : raise(gs.pot);
+  if (adjusted >= 0.8) return toCall >= stack * 0.4 ? allIn() : raise(gs.pot);
+  if (adjusted >= 0.65) {
+    if (toCall === 0) return raise(gs.pot * 0.6);
+    return toCall <= gs.pot * 0.5 ? raise(gs.pot * 0.75) : call();
   }
-  if (usesHole && hand.category >= Category.TwoPair) {
-    return toCall > stack * 0.5 ? call() : raise(gs.pot * 0.75);
+  if (toCall === 0) {
+    if (adjusted >= 0.5 && opponents <= 2) return raise(gs.pot * 0.5);
+    // Mixed semi-bluff heads-up so we are harder to profile
+    if (opponents === 1 && !isRiver && eq >= 0.3 && Math.random() < 0.3) return raise(gs.pot * 0.5);
+    return check();
   }
-  if (usesHole && hand.category === Category.Pair) {
-    const pairRank = hand.ranks[0];
-    const topBoard = Math.max(...board.map(rankValue));
-    if (pairRank >= topBoard) {
-      return toCall === 0 ? raise(gs.pot * 0.5) : callIfCheap(Math.max(gs.pot * 0.6, stack * 0.2));
-    }
-    return callIfCheap(gs.pot * 0.25);
-  }
-  if (!isRiver && (hasFlushDraw(hole, board) || hasStraightDraw(hole, board))) {
-    return callIfCheap(gs.pot * 0.35);
-  }
+  if (adjusted >= potOdds + 0.03) return call();
   return check();
 }
 
