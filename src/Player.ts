@@ -69,9 +69,9 @@ function decide(gs: GameState): number {
         const shoveAt = effectiveBlinds <= 3 ? -99 : effectiveBlinds <= 6 ? 5 : effectiveBlinds <= 10 ? 6 : 7;
         return chen >= shoveAt ? allIn() : check();
       }
+      // Open to 4.5bb: the other bots fold most hands once calling costs more than ~3bb
       if (chen >= 12) return raise(gs.pot + 3 * bb);
-      if (chen >= 10) return raise(3 * bb);
-      if (chen >= 8) return raise(2 * bb);
+      if (chen >= 8) return raise(4.5 * bb - gs.current_buy_in);
       if (chen >= 6 && toCall < bb) return call();
       return check();
     }
@@ -81,6 +81,12 @@ function decide(gs: GameState): number {
     const bigRaise = !aggressor || aggressor.stack === 0 || gs.current_buy_in >= 10 * bb;
     let range = clamp(freq * (bigRaise ? 0.7 : 1), 0.08, 1);
     if (aggressor && aggressor.stack === 0) range = Math.max(range, shoveRange(aggressor));
+    // Ranges read from the other bots' behaviour
+    if (aggressor?.name === "nontekik") {
+      if (aggressor.stack === 0) range = 0.3;
+      else if (me.bet > bb && effectiveBlinds > 25) range = 0.03;
+    }
+    if (aggressor?.name === "megistekik" && aggressor.stack === 0) range = me.bet > bb ? 0.06 : 0.2;
     const callers = opponents.filter(p => p !== aggressor && p.bet === gs.current_buy_in).length;
     const eq = equity(hole, board, 1 + callers, { aggressorRange: range });
     equityCache = eq;
@@ -95,6 +101,8 @@ function decide(gs: GameState): number {
   if (toCall === 0) {
     const eq = equity(hole, board, opponents.length);
     equityCache = eq;
+    // nontechyk only continues against a pot-sized bet with a strong made hand
+    if (opponents.length === 1 && opponents[0].name === "nontechyk") return raise(eq >= 0.75 ? gs.pot * 0.75 : gs.pot);
     if (eq >= 0.75) return raise(gs.pot * 0.75);
     if (eq >= 0.55 && opponents.length <= 2) return raise(gs.pot * 0.5);
     // Mixed semi-bluff heads-up so we are harder to profile
@@ -106,7 +114,9 @@ function decide(gs: GameState): number {
   const betRatio = toCall / Math.max(gs.pot - toCall, 1);
   const baseRange = betRatio <= 0.4 ? 0.55 : betRatio <= 0.8 ? 0.35 : betRatio <= 1.3 ? 0.22 : 0.12;
   const freq = aggressor ? raiseFrequency(gs, aggressor.name) : 0.25;
-  const range = clamp(baseRange * (0.6 + freq), 0.08, 1);
+  let range = clamp(baseRange * (0.6 + freq), 0.08, 1);
+  // nontechyk never bluffs: its bets are value, sized by strength
+  if (aggressor?.name === "nontechyk") range = betRatio <= 0.55 ? 0.35 : betRatio <= 0.75 ? 0.25 : 0.12;
   const eq = equity(hole, board, opponents.length, { aggressorRange: range });
   equityCache = eq;
 
