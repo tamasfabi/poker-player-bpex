@@ -1,6 +1,7 @@
 import { chenScore } from "./hand";
 import { equity } from "./equity";
 import { observe, raiseFrequency } from "./opponents";
+import { profileOf } from "./priors";
 import { GameState, PlayerState } from "./types";
 
 export class Player {
@@ -36,6 +37,11 @@ function decide(gs: GameState): number {
   const effective = Math.min(stack + me.bet, Math.max(0, ...opponents.map(p => p.stack + p.bet)));
   const effectiveBlinds = effective / bb;
   const potOdds = toCall / (gs.pot + toCall);
+  // Payout is 5/3/0/0: with three left and someone shorter than us, busting third is costly,
+  // so demand extra equity before risking most of our stack
+  const alive = gs.players.filter(p => p.status !== "out");
+  const someoneShorter = alive.some(p => p !== me && p.stack + p.bet < stack + me.bet);
+  const bubble = alive.length === 3 && someoneShorter && toCall >= stack * 0.5 ? 0.08 : 0;
 
   const check = () => 0;
   const call = () => Math.min(toCall, stack);
@@ -76,35 +82,40 @@ function decide(gs: GameState): number {
     if (smallRaise && freq >= 0.35 && callers === 0 && (eq >= 0.45 || (eq >= 0.35 && Math.random() < 0.35))) {
       return effectiveBlinds <= 25 ? allIn() : raise(2 * gs.current_buy_in);
     }
-    if (eq >= potOdds + 0.04) return effectiveBlinds <= 25 ? allIn() : call();
+    if (eq >= potOdds + 0.04 + bubble) return effectiveBlinds <= 25 ? allIn() : call();
     return check();
   }
 
   // Postflop
   const isRiver = board.length === 5;
+  // Fold-to-bet of the opponent least likely to fold decides whether bluffs can work
+  const foldToBet = Math.min(...opponents.map(p => profileOf(p.name).foldToBet));
   if (toCall === 0) {
     const eq = equity(hole, board, opponents.length);
-    if (eq >= 0.75) return raise(gs.pot * 0.75);
-    if (eq >= 0.55 && opponents.length <= 2) return raise(gs.pot * 0.5);
-    // Mixed semi-bluff heads-up so we are harder to profile
-    if (opponents.length === 1 && !isRiver && eq >= 0.3 && Math.random() < 0.3) return raise(gs.pot * 0.5);
+    // Calling stations pay off big bets; folders only pay small ones
+    const valueSize = foldToBet < 0.3 ? 1 : 0.6;
+    if (eq >= 0.75) return raise(gs.pot * Math.max(0.75, valueSize));
+    if (eq >= 0.55 && opponents.length <= 2) return raise(gs.pot * valueSize * 0.8);
+    // Bluff heads-up against bots that fold to bets, never against calling stations
+    const bluffRate = foldToBet >= 0.6 ? 0.5 : foldToBet >= 0.4 ? 0.25 : 0;
+    if (opponents.length === 1 && eq >= 0.2 && Math.random() < bluffRate * (isRiver ? 0.6 : 1)) return raise(gs.pot * 0.5);
     return check();
   }
 
   // Facing a bet: the bigger the bet relative to the pot, the stronger the bettor's range
   const betRatio = toCall / Math.max(gs.pot - toCall, 1);
   const baseRange = betRatio <= 0.4 ? 0.55 : betRatio <= 0.8 ? 0.35 : betRatio <= 1.3 ? 0.22 : 0.12;
-  const freq = aggressor ? raiseFrequency(aggressor) : 0.25;
-  const range = clamp(baseRange * (0.6 + freq), 0.08, 1);
+  // Some bots bet and shove far wider than their bet size suggests
+  const range = clamp(baseRange * profileOf(aggressor?.name).postflopBetWidth, 0.08, 1);
   const eq = equity(hole, board, opponents.length, { aggressorRange: range });
 
   if (eq >= 0.7) return toCall >= stack * 0.4 ? allIn() : raise(gs.pot);
   // Small stabs (e.g. auto c-bets) heads-up: raise for value, sometimes as a bluff against frequent bettors
   if (betRatio <= 0.4 && opponents.length === 1 && toCall < stack * 0.2) {
     if (eq >= 0.55) return raise(gs.pot);
-    if (!isRiver && freq >= 0.35 && eq >= 0.25 && Math.random() < 0.3) return raise(gs.pot);
+    if (!isRiver && foldToBet >= 0.5 && eq >= 0.25 && Math.random() < 0.35) return raise(gs.pot);
   }
-  if (eq >= potOdds + 0.03) return call();
+  if (eq >= potOdds + 0.03 + bubble) return call();
   return check();
 }
 

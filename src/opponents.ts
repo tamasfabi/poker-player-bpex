@@ -1,3 +1,4 @@
+import { profileOf } from "./priors";
 import { GameState, PlayerState } from "./types";
 
 // Memory of how often each opponent raises preflop. The server process lives across requests and
@@ -30,9 +31,10 @@ export function observe(gs: GameState): void {
   });
 }
 
-// Share of hands this opponent raises preflop, with a prior of 1 raise in 4 hands.
+// Share of hands this opponent raises preflop: what we have seen, blended with the known profile
+// (worth 20 hands) so we exploit from the first hand and adapt when they change versions.
 export function raiseFrequency(p: PlayerState): number {
-  const s = stats.get(keyOf(p));
-  if (!s) return 0.25;
-  return (s.raised + 1) / (s.seen + 4);
+  const s = stats.get(keyOf(p)) ?? { seen: 0, raised: 0 };
+  const prior = profileOf(p.name).preflopRaise;
+  return (s.raised + prior * 20) / (s.seen + 20);
 }
