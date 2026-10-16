@@ -1,7 +1,7 @@
 import express from 'express';
 import { Player } from './Player';
 
-const VERSION = "bpex v1 - tight aggressive";
+const VERSION = "bpex v1.1 - short-handed push/fold";
 
 const app = express();
 const player = new Player();

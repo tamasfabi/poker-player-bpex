@@ -32,13 +32,22 @@ function decide(gs: GameState): number {
   const callIfCheap = (limit: number) => (toCall <= limit ? call() : check());
 
   if (board.length === 0) {
-    const chen = chenScore(hole);
-    const shortStack = stack <= 12 * bb;
+    // Fewer players left -> blinds come around faster and average hands are stronger, so play wider
+    const playersLeft = gs.players.filter(p => p.status !== "out").length;
+    const chen = chenScore(hole) + (playersLeft <= 2 ? 3 : playersLeft === 3 ? 1 : 0);
+    const stackInBlinds = stack / bb;
+    const facingShove = toCall >= stack * 0.4;
 
-    if (shortStack) return chen >= 8 ? allIn() : callIfCheap(0);
+    if (stackInBlinds <= 15) {
+      // Push/fold: the shorter we are, the wider we shove
+      const shoveAt = stackInBlinds <= 6 ? 6 : stackInBlinds <= 10 ? 7 : 8;
+      if (chen >= shoveAt) return allIn();
+      return callIfCheap(0);
+    }
+    if (facingShove) return chen >= 11 ? allIn() : check();
     if (chen >= 12) return toCall > 6 * bb ? allIn() : raise(gs.pot + 3 * bb);
     if (chen >= 10) return toCall <= 6 * bb ? raise(3 * bb) : callIfCheap(stack * 0.35);
-    if (chen >= 8) return callIfCheap(Math.max(3 * bb, stack * 0.06));
+    if (chen >= 8) return toCall <= bb ? raise(2 * bb) : callIfCheap(Math.max(3 * bb, stack * 0.06));
     if (chen >= 6) return callIfCheap(bb);
     return check();
   }
