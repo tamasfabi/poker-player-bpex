@@ -19,6 +19,9 @@ export class Player {
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+// Streets on which we already raised, so we never get dragged into endless min-raise wars
+const raisedStreets = new Set<string>();
+
 function decide(gs: GameState): number {
   const me = gs.players[gs.in_action];
   const hole = me.hole_cards ?? [];
@@ -39,7 +42,16 @@ function decide(gs: GameState): number {
 
   const check = () => 0;
   const call = () => Math.min(toCall, stack);
-  const raise = (extra: number) => Math.min(stack, toCall + Math.max(gs.minimum_raise, Math.floor(extra)));
+  const streetKey = `${gs.game_id}:${gs.round}:${board.length}`;
+  const reRaised = raisedStreets.has(streetKey);
+  const raise = (extra: number) => {
+    // Second raise on the same street: only all-in with a monster, otherwise just call
+    if (reRaised) return equityCache >= 0.8 ? stack : Math.min(toCall, stack);
+    if (raisedStreets.size > 5000) raisedStreets.clear();
+    raisedStreets.add(streetKey);
+    return Math.min(stack, toCall + Math.max(gs.minimum_raise, Math.floor(extra)));
+  };
+  let equityCache = 0;
   const allIn = () => stack;
 
   if (board.length === 0) {
@@ -67,9 +79,10 @@ function decide(gs: GameState): number {
     const range = clamp(freq * (bigRaise ? 0.7 : 1), 0.08, 1);
     const callers = opponents.filter(p => p !== aggressor && p.bet === gs.current_buy_in).length;
     const eq = equity(hole, board, 1 + callers, { aggressorRange: range });
+    equityCache = eq;
 
     if (eq >= 0.62 && stack > 40 * bb) return raise(gs.pot);
-    if (eq >= potOdds + 0.04) return effectiveBlinds <= 25 ? allIn() : call();
+    if (eq >= potOdds + 0.04) return effectiveBlinds <= 15 || toCall >= stack * 0.35 ? allIn() : call();
     return check();
   }
 
@@ -77,6 +90,7 @@ function decide(gs: GameState): number {
   const isRiver = board.length === 5;
   if (toCall === 0) {
     const eq = equity(hole, board, opponents.length);
+    equityCache = eq;
     if (eq >= 0.75) return raise(gs.pot * 0.75);
     if (eq >= 0.55 && opponents.length <= 2) return raise(gs.pot * 0.5);
     // Mixed semi-bluff heads-up so we are harder to profile
@@ -90,6 +104,7 @@ function decide(gs: GameState): number {
   const freq = aggressor ? raiseFrequency(gs, aggressor.name) : 0.25;
   const range = clamp(baseRange * (0.6 + freq), 0.08, 1);
   const eq = equity(hole, board, opponents.length, { aggressorRange: range });
+  equityCache = eq;
 
   if (eq >= 0.7) return toCall >= stack * 0.4 ? allIn() : raise(gs.pot);
   if (eq >= potOdds + 0.03) return call();
