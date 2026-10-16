@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+process.env.BPEX_OFFLINE = '1';
 // Counterfactual replay of real tournament decisions.
 //
 // For every spot in the cached game logs (tools/.cache, filled by tools/analyze.py) where bpex had
@@ -31,7 +32,10 @@ for (let i = 0; i < args.length; i++) {
 if (specs.length === 0) specs.push('current=out/Player.js');
 const versions = specs.map(s => {
   const [name, file] = s.includes('=') ? s.split('=') : [path.basename(path.dirname(s)), s];
-  return { name, Player: require(path.resolve(ROOT, file)).Player };
+  const dir = path.dirname(path.resolve(ROOT, file));
+  // Strategies that learn from finished hands get each hand's log once it is over, like live
+  const livelog = fs.existsSync(path.join(dir, 'livelog.js')) ? require(path.join(dir, 'livelog.js')) : null;
+  return { name, Player: require(path.resolve(ROOT, file)).Player, livelog };
 });
 
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
@@ -86,9 +90,15 @@ for (const g of games) {
   let lastRaise = 0;
   let prevBuyIn = 0;
   let betsInHand = 0;
+  let handEvents = [];
   for (const e of log) {
     const gs = e.game_state;
-    if (!e.type) { prev = e; lastRaise = gs.big_blind || gs.small_blind * 2; prevBuyIn = 0; betsInHand = 0; continue; }
+    if (!e.type) {
+      if (handEvents.length) versions.forEach(v => v.livelog && v.livelog.feed(handEvents, hero));
+      handEvents = [e];
+      prev = e; lastRaise = gs.big_blind || gs.small_blind * 2; prevBuyIn = 0; betsInHand = 0; continue;
+    }
+    handEvents.push(e);
     if (e.type === 'card_deal' && /community/.test(e.message || '')) lastRaise = gs.small_blind * 2;
     if (e.type === 'bet' && prev && gs.players[e.on_turn] && gs.players[e.on_turn].name === hero
         && !/disqualified/.test(e.message)) {
